@@ -1,0 +1,182 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="头文件\tld">
+      <UniqueIdentifier>{856f2ef5-c760-4bed-a62f-c098c4560bdd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\kcf">
+      <UniqueIdentifier>{71b14b83-c2c4-4144-b200-8f894cc01b58}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\cvblobs">
+      <UniqueIdentifier>{98f07d9a-2b1c-4d96-afd4-564b25347333}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="resource.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="imgStream.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="TLD.h">
+      <Filter>头文件\tld</Filter>
+    </ClInclude>
+    <ClInclude Include="TLDUtil.h">
+      <Filter>头文件\tld</Filter>
+    </ClInclude>
+    <ClInclude Include="VarianceFilter.h">
+      <Filter>头文件\tld</Filter>
+    </ClInclude>
+    <ClInclude Include="Clustering.h">
+      <Filter>头文件\tld</Filter>
+    </ClInclude>
+    <ClInclude Include="DetectionResult.h">
+      <Filter>头文件\tld</Filter>
+    </ClInclude>
+    <ClInclude Include="EnsembleClassifier.h">
+      <Filter>头文件\tld</Filter>
+    </ClInclude>
+    <ClInclude Include="IntegralImage.h">
+      <Filter>头文件\tld</Filter>
+    </ClInclude>
+    <ClInclude Include="kcf_tracking.h">
+      <Filter>头文件\tld</Filter>
+    </ClInclude>
+    <ClInclude Include="NNClassifier.h">
+      <Filter>头文件\tld</Filter>
+    </ClInclude>
+    <ClInclude Include="NormalizedPatch.h">
+      <Filter>头文件\tld</Filter>
+    </ClInclude>
+    <ClInclude Include="tracker.h">
+      <Filter>头文件\kcf</Filter>
+    </ClInclude>
+    <ClInclude Include="ffttools.hpp">
+      <Filter>头文件\kcf</Filter>
+    </ClInclude>
+    <ClInclude Include="fhog.hpp">
+      <Filter>头文件\kcf</Filter>
+    </ClInclude>
+    <ClInclude Include="kcftracker.hpp">
+      <Filter>头文件\kcf</Filter>
+    </ClInclude>
+    <ClInclude Include="labdata.hpp">
+      <Filter>头文件\kcf</Filter>
+    </ClInclude>
+    <ClInclude Include="recttools.hpp">
+      <Filter>头文件\kcf</Filter>
+    </ClInclude>
+    <ClInclude Include="ForegroundDetector.h">
+      <Filter>头文件\tld</Filter>
+    </ClInclude>
+    <ClInclude Include="DetectorCascade.h">
+      <Filter>头文件\tld</Filter>
+    </ClInclude>
+    <ClInclude Include="blob.h">
+      <Filter>头文件\cvblobs</Filter>
+    </ClInclude>
+    <ClInclude Include="BlobContour.h">
+      <Filter>头文件\cvblobs</Filter>
+    </ClInclude>
+    <ClInclude Include="BlobLibraryConfiguration.h">
+      <Filter>头文件\cvblobs</Filter>
+    </ClInclude>
+    <ClInclude Include="BlobOperators.h">
+      <Filter>头文件\cvblobs</Filter>
+    </ClInclude>
+    <ClInclude Include="BlobProperties.h">
+      <Filter>头文件\cvblobs</Filter>
+    </ClInclude>
+    <ClInclude Include="BlobResult.h">
+      <Filter>头文件\cvblobs</Filter>
+    </ClInclude>
+    <ClInclude Include="ComponentLabeling.h">
+      <Filter>头文件\cvblobs</Filter>
+    </ClInclude>
+    <ClInclude Include="dirent.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="SingleObjectTracking.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="imgStream.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="TLD.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Clustering.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="DetectionResult.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="DetectorCascade.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="EnsembleClassifier.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ForegroundDetector.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="kcf_tracking.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="NNClassifier.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="TLDUtil.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="VarianceFilter.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="fhog.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="kcftracker.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="runtracker.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="blob.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="BlobContour.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="BlobOperators.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="BlobProperties.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="BlobResult.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ComponentLabeling.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>
