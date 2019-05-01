@@ -596,10 +596,10 @@ int main(){
 */
 /*结束获取目标框位置*/
 
-	string first_file = "C:/Users/18016/Desktop/ObjectTracking/learnopencv-master/tracking/videos/01.png"; 
+	string first_file = "C://"; 
 	VideoCapture sequence(first_file);
 	VideoCapture seq;
-	//seq.open("C:/Users/18016/Desktop/ObjectTracking/learnopencv-master/tracking/videos/chaplin.mp4");
+	//seq.open("");
 	seq.open(0);
 	if (!sequence.isOpened())
 	{
