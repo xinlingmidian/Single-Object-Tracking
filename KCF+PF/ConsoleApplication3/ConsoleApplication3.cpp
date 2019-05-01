@@ -7,7 +7,6 @@
 #include <opencv2/highgui/highgui.hpp>  
 #include <math.h>
 #include <time.h>
-//#include <dirent.h>
 #include "kcftracker.hpp"
 
 using namespace std;
@@ -404,7 +403,7 @@ void Estimation( SPACESTATE * state, float * weight, int N,
 	at_dot = 0;
 	Hxt = 0; 	Hyt = 0;
 	v_xt = 0;	v_yt = 0;
-	//xt = 0;  	yt = 0;
+	xt = 0;  	yt = 0;
 	weight_sum = 0;
 	for ( i = 0; i < N; i++ ) /* 求和 */
 	{
@@ -413,8 +412,8 @@ void Estimation( SPACESTATE * state, float * weight, int N,
 		Hyt += state[i].Hyt * weight[i];
 		v_xt += state[i].v_xt * weight[i];
 		v_yt += state[i].v_yt * weight[i];
-		//xt += state[i].xt * weight[i];
-		//yt += state[i].yt * weight[i];
+		xt += state[i].xt * weight[i];
+		yt += state[i].yt * weight[i];
 		weight_sum += weight[i];
 	}
 	/* 求平均 */
@@ -424,8 +423,8 @@ void Estimation( SPACESTATE * state, float * weight, int N,
 	EstState.Hyt = (int)(Hyt/weight_sum + 0.5 );
 	EstState.v_xt = v_xt/weight_sum;
 	EstState.v_yt = v_yt/weight_sum;
-	//EstState.xt = (int)(xt/weight_sum + 0.5 );
-	//EstState.yt = (int)(yt/weight_sum + 0.5 );
+	EstState.xt = (int)(xt/weight_sum + 0.5 );
+	EstState.yt = (int)(yt/weight_sum + 0.5 );
 	return;
 }
 
@@ -460,7 +459,7 @@ int ModelUpdate( SPACESTATE EstState, float * TargetHist0,  float PiT,
 	return( rvalue );
 }
 
-int ColorParticleTracking( unsigned char * image, int &W, int &H, 
+int ColorParticleTracking( unsigned char * image, int &W, int &H, int & xc, int & yc,
 						   int & Wx_h, int & Hy_h,float & max_weight)
 {
 	SPACESTATE EState;
@@ -474,8 +473,8 @@ int ColorParticleTracking( unsigned char * image, int &W, int &H,
 	Observe(states, weights, NParticle , image, W, H, ModelHist0);
 	/*估计：对状态量进行估计，提取位置量*/
 	Estimation(states, weights, NParticle, EState);
-	//xc = EState.xt;
-	//yc = EState.yt;
+	xc = EState.xt;
+	yc = EState.yt;
 	Wx_h = EState.Hxt;
 	Hy_h = EState.Hyt;
 	/*模型更新*/
@@ -486,7 +485,7 @@ int ColorParticleTracking( unsigned char * image, int &W, int &H,
 	for(i = 1;i < NParticle ;i++)
 		max_weight = max_weight < weights[i] ? weights[i] : max_weight;
 	/*进行合法性检验，不合法返回-1*/
-	if( Wx_h <= 0 || Hy_h <= 0)
+	if(xc < 0 || yc < 0 || xc >= W || yc >= H || Wx_h <= 0 || Hy_h <= 0)
 		return(-1);
 	else
 		return(1);
@@ -647,17 +646,32 @@ int main(){
 		// Update 更新
 		else{
 			result = tracker.update(frame);
-			for ( int i = 0; i < NParticle; i++ )
+			if (tracker.peak_value < 0.6) {
+				cout << "target lost"<<endl;
+			}
+			else {
+				rectangle(frame, Point(result.x + result.width / 2 - WidOut, result.y + result.height / 2 - HeiOut),
+					Point(result.x + result.width / 2 + WidOut, result.y + result.height / 2 + HeiOut),
+					Scalar(0, 0, 255), 1, 8);//红色
+			}
+			/*for ( int i = 0; i < NParticle; i++ )
 			{
 				states[i].xt = result.x+result.width/2;
 				states[i].yt = result.y+result.height/2;
 				states[i].Hxt = result.width/2;
 				states[i].Hyt = result.height/2;
-			}
+			}*/
 			//rho_v = ColorParticleTracking( img, Wid, Hei, WidOut, HeiOut, max_weight);
-			ColorParticleTracking(img, Wid, Hei, WidOut, HeiOut, max_weight);
-
-			rectangle( frame, Point( result.x+result.width/2-WidOut, result.y+result.height/2-HeiOut ), Point( result.x+result.width/2+WidOut, result.y+result.height/2+HeiOut), Scalar( 0, 0, 255 ), 1, 8 );
+			rho_v = ColorParticleTracking(img, Wid, Hei, xout, yout, WidOut, HeiOut, max_weight);
+			if (rho_v == 1 && max_weight > 0.0001) {
+				rectangle(frame, cvPoint(xout - WidOut, yout - HeiOut),
+					cvPoint(xout + WidOut, yout + HeiOut), cvScalar(255, 0, 0), 2, 8, 0);//蓝色
+				xin = xout; 
+				yin = yout;         //上一帧的输出作为这一帧的输入
+			}
+			else {
+				cout << "pf lost." << endl;
+			}	
 			//tracker._roi.width=2*WidOut;
 			//tracker._roi.height=2*HeiOut;
 			//resultsFile << result.x << "," << result.y << "," << result.width << "," << result.height << endl;

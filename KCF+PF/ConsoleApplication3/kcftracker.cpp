@@ -208,7 +208,7 @@ cv::Rect KCFTracker::update(cv::Mat image)
         // Test at a bigger _scale 大一点的尺度测试
         new_res = detect(_tmpl, getFeatures(image, 0, scale_step), new_peak_value);
 		//同理
-        if (scale_weight * new_peak_value > peak_value) {
+        if (peak_value < 0.9 && scale_weight * new_peak_value > peak_value) {
             res = new_res;
             peak_value = new_peak_value;
             _scale *= scale_step;
@@ -216,7 +216,6 @@ cv::Rect KCFTracker::update(cv::Mat image)
             _roi.height *= scale_step;
         }
     }
-	std::cout << peak_value <<std::endl;
 
     // Adjust by cell size and _scale  
 	//因为返回的只有中心坐标,使用尺度和中心坐标调整目标框
