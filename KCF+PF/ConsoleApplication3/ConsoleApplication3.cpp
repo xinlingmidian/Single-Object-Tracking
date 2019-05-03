@@ -40,32 +40,35 @@ typedef struct __SpaceState{  /* 状态空间变量 */
 	float v_yt;           /* y方向运动速度 */
 	int Hxt;              /* x方向半窗宽 */
 	int Hyt;              /* y方向半窗宽 */
-	float at_dot;         /* 尺度变换速度 */
+	float at_dot;         /* 尺度变换速度,粒子所代表的那一片区域的尺度变化速度 */
 } SPACESTATE;
-unsigned char *img;//便于计算...
-int Wid,Hei; //图像的大小
-//int WidIn,HeiIn; //输入的半宽与半高
-int WidOut,HeiOut;//输出的半宽与半高
-int xin,yin;   //跟踪时输入的中心点
-int xout,yout;//跟踪时得到的输出中心点
-int nbin;                 /* 直方图条数 */
+
+
+unsigned char *img;							 //把iplimg改到char*,便于计算...
+
+int Wid,Hei;								 //图像的大小
+//int WidIn,HeiIn;							 //输入的半宽与半高
+int WidOut,HeiOut;							 //输出的半宽与半高
+int xin,yin;								 //跟踪时输入的中心点
+int xout,yout;								 //跟踪时得到的输出中心点
+int nbin;									 //直方图条数
 
 const int neighbors = 8;
 const int numpat = static_cast<int>(std::pow(2.0, static_cast<double>(neighbors)));
 const int m_grid_x = 1,m_grid_y = 1;
-int bins = m_grid_x*m_grid_y*numpat;            //纹理直方图
+int bins = m_grid_x*m_grid_y*numpat;         //纹理直方图
 
-const float DELTA_T = (float)0.05;  /*帧频，可以为30、25、15、10等0.05*/
-const int POSITION_DISTURB = 15;      /* 位置扰动幅度   */
-const float VELOCITY_DISTURB = 40.0;  /* 速度扰动幅值  40.0 */
-const float SCALE_DISTURB = 0.0;      /* 窗宽高扰动幅度 */
-const float SCALE_CHANGE_D = (float)0.001;   /* 尺度变换速度扰动幅度 0.001*/
-const float Pi_Thres = (float)0.8;  //权重阈值
-long ran_seed = 802163120;  // 随机数种子，为全局变量，设置缺省值
-int NParticle = 75;   //粒子个数75
-float* ModelHist0 = NULL;//模型直方图
-SPACESTATE* states = NULL;
-float* weights = NULL;   //每个粒子的权重
+const float DELTA_T = (float)0.05;           //帧频，可以为30、25、15、10等0.05
+const int POSITION_DISTURB = 15;             //位置扰动幅度15
+const float VELOCITY_DISTURB = 40.0;         //速度扰动幅值40.0
+const float SCALE_DISTURB = 0.0;             //窗宽高扰动幅度0.0
+const float SCALE_CHANGE_D = (float)0.001;   //尺度变换速度扰动幅度0.001
+const float Pi_Thres = (float)0.8;           //权重阈值0.8
+long ran_seed = 802163120;                   //随机数种子,为全局变量,设置缺省值802163120
+int NParticle = 75;                          //粒子个数75
+float* ModelHist = NULL;                     //模型直方图
+SPACESTATE* states = NULL;                   //状态数组
+float* weights = NULL;                       //每个粒子的权重
 Mat curframe;
 Mat lbpdst;
 Mat curgray;
@@ -73,14 +76,14 @@ Mat pBackImg;
 Mat pFront;
 Mat pTrackImg;
 
-bool pause=true;
-//bool gotbb=false;
-bool drawing_box = false;  //判断是否画矩形框
-float xMin, yMin, width, height;/*跟踪框的坐标,宽,高,*/
+bool pause=true;                             //是否暂停
+bool drawing_box = false;                    //判断是否画矩形框
+float xMin, yMin, width, height;             //跟踪框的坐标(xMin,yMin),宽,高
 //bool mark = false;
+//bool gotbb=false;
 
-Mat frame;
-Rect initbox;
+Mat frame;									 //帧
+Rect initbox;                                //初始跟踪框
 
 //设置种子数，一般利用系统时间来进行设置，也可以直接传入一个long型整数
 long set_seed(long setvalue)
@@ -92,7 +95,20 @@ long set_seed(long setvalue)
 	return(ran_seed);
 }
 
-
+/*
+计算一幅图像中某个区域的彩色直方图分布
+输入参数：
+int x0, y0：           指定图像区域的中心点
+int Wx, Hy：           指定图像区域的半宽和半高
+unsigned char * image：图像数据，按从左至右，从上至下的顺序扫描，
+颜色排列次序：RGB, RGB, ...
+(或者：YUV, YUV, ...)
+int W, H：             图像的宽和高
+输出参数：
+float * ColorHist：    彩色直方图，颜色索引按：
+i = r * G_BIN * B_BIN + g * B_BIN + b排列
+int bins：             彩色直方图的条数R_BIN*G_BIN*B_BIN（这里取8x8x8=512）
+*/
 void CalcuColorHistogram( int x0, int y0, int Wx, int Hy, 
 						 unsigned char * image, int W, int H,
 						 float * ColorHist, int bins )
@@ -141,6 +157,14 @@ void CalcuColorHistogram( int x0, int y0, int Wx, int Hy,
 		return;
 }
 
+/*
+计算Bhattacharyya系数
+输入参数：
+float * p, * q：       两个彩色直方图密度估计
+int bbins：            直方图条数
+返回值：
+Bhattacharyya系数
+*/
 float CalcuBhattacharyya( float * p, float * q, int bbins )
 {
 	int i;
@@ -152,17 +176,16 @@ float CalcuBhattacharyya( float * p, float * q, int bbins )
 
 	return( rho );
 }
+
 /*# define RECIP_SIGMA  3.98942280401  / * 1/(sqrt(2*pi)*sigma), 这里sigma = 0.1 * /*/
 # define SIGMA2       0.02           /* 2*sigma^2, 这里sigma = 0.1 */
 /*根据巴氏系数计算各个权值*/
 float CalcuWeightedPi( float rho )
 {
 	float pi_n, d2;
-
 	d2 = 1 - rho;
 	//pi_n = (float)(RECIP_SIGMA * exp( - d2/SIGMA2 ));
 	pi_n = (float)(exp( - d2/SIGMA2 ));
-
 	return( pi_n );
 }
 
@@ -180,6 +203,9 @@ float ran0(long *idum)
 	return ans;
 }
 
+/*
+获得一个[0,1]之间的随机数
+*/
 float rand0_1()
 {
 	return( ran0( &ran_seed ) );
@@ -236,14 +262,11 @@ int Initialize(int x0,int y0,int Wx,int Hy,unsigned char* img,int W,int H)
 	if(weights == NULL)
 		return (-3);
 	nbin = R_BIN * G_BIN * B_BIN;  //确定直方图条数
-	ModelHist0 = new float [nbin];  //申请直方图内存
-	if(ModelHist0 == NULL)
+	ModelHist = new float [nbin];  //申请直方图内存
+	if(ModelHist == NULL)
 		return(-1);
 	/*计算目标模板直方图*/
-	CalcuColorHistogram(x0 ,y0 ,Wx ,Hy ,img ,W ,H ,ModelHist0 ,nbin );
-	//cout << "aaaaaa" << endl;
-	//cout << ModelHist0 << endl;
-	//cout << "aaaaaa" << endl;
+	CalcuColorHistogram(x0 ,y0 ,Wx ,Hy ,img ,W ,H ,ModelHist ,nbin );
 	/*  初始化粒子状态（以x0，y0，0，,0，Wx，Hy，0）为中心呈N（0,0.6）正态分布? */
 	states[0].xt = x0;
 	states[0].yt = y0;
@@ -271,10 +294,18 @@ int Initialize(int x0,int y0,int Wx,int Hy,unsigned char* img,int W,int H)
 	return( 1 );
 }
 
+/*
+计算归一化累计概率c'_i
+输入参数：
+float * weight：    为一个有N个权重（概率）的数组
+int N：             数组元素个数
+输出参数：
+float * cumulateWeight： 为一个有N+1个累计权重的数组，
+cumulateWeight[0] = 0;
+*/
 void NormalizeCumulatedWeight( float * weight, float * cumulateWeight, int N )
 {
 	int i;
-
 	for ( i = 0; i < N+1; i++ ) 
 		cumulateWeight[i] = 0;
 	for ( i = 0; i < N; i++ )
@@ -285,6 +316,15 @@ void NormalizeCumulatedWeight( float * weight, float * cumulateWeight, int N )
 	return;
 }
 
+/*
+折半查找，在数组NCumuWeight[N]中寻找一个最小的j，使得
+NCumuWeight[j] <=v
+float v：              一个给定的随机数
+float * NCumuWeight：  权重数组
+int N：                数组维数
+返回值：
+数组下标序号
+*/
 int BinearySearch( float v, float * NCumuWeight, int N )
 {
 	int l, r, m;
@@ -300,6 +340,14 @@ int BinearySearch( float v, float * NCumuWeight, int N )
 	return( 0 );
 }
 
+/*
+重新进行重要性采样
+输入参数：
+float * c：          对应样本权重数组pi(n)
+int N：              权重数组、重采样索引数组元素个数
+输出参数：
+int * ResampleIndex：重采样索引数组
+*/
 void ImportanceSampling( float * c, int * ResampleIndex, int N )
 {
 	float rnum, * cumulateWeight;
@@ -320,10 +368,19 @@ void ImportanceSampling( float * c, int * ResampleIndex, int N )
 	return;	
 }
 
+/*
+样本选择，从N个输入样本中根据权重重新挑选出N个
+输入参数：
+SPACESTATE * state：     原始样本集合（共N个）
+float * weight：         N个原始样本对应的权重
+int N：                  样本个数
+输出参数：
+SPACESTATE * state：     更新过的样本集
+*/
 void ReSelect( SPACESTATE * state, float * weight, int N )
 {
 	SPACESTATE * tmpState;
-	int i, * rsIdx;
+	int i, * rsIdx;//统计的随机数所掉区间的索引
 
 	tmpState = new SPACESTATE[N];
 	rsIdx = new int[N];
@@ -339,19 +396,30 @@ void ReSelect( SPACESTATE * state, float * weight, int N )
 	return;
 }
 
+/*
+传播：根据系统状态方程求取状态预测量
+状态方程为： S(t) = A S(t-1) + W(t-1)
+W(t-1)为高斯噪声
+输入参数：
+SPACESTATE * state：      待求的状态量数组
+int N：                   待求状态个数
+输出参数：
+SPACESTATE * state：      更新后的预测状态量数组
+*/
 void Propagate( SPACESTATE * state, int N)
 {
 	int i;
 	int j;
 	float rn[7];
-
 	/* 对每一个状态向量state[i](共N个)进行更新 */
 	for ( i = 0; i < N; i++ )  /* 加入均值为0的随机高斯噪声 */
 	{
 		for ( j = 0; j < 7; j++ ) rn[j] = randGaussian( 0, (float)0.6 ); /* 产生7个随机高斯分布的数 */
 		/*为什么这么更新我也没看懂*/
-		state[i].xt = (int)(state[i].xt);
-		state[i].yt = (int)(state[i].yt);
+		//state[i].xt = (int)(state[i].xt);
+		//state[i].yt = (int)(state[i].yt);
+		state[i].xt = (int)(state[i].xt + state[i].v_xt * DELTA_T + rn[0] * state[i].Hxt + 0.5);
+		state[i].yt = (int)(state[i].yt + state[i].v_yt * DELTA_T + rn[1] * state[i].Hyt + 0.5);
 		state[i].v_xt = (float)(state[i].v_xt + rn[2] * VELOCITY_DISTURB);
 		state[i].v_yt = (float)(state[i].v_yt + rn[3] * VELOCITY_DISTURB);
 		state[i].Hxt = (int)(state[i].Hxt +state[i].Hxt*state[i].at_dot + rn[4] * SCALE_DISTURB + 0.5);
@@ -362,6 +430,20 @@ void Propagate( SPACESTATE * state, int N)
 	return;
 }
 
+/*
+观测，根据状态集合St中的每一个采样，观测直方图，然后
+更新估计量，获得新的权重概率
+输入参数：
+SPACESTATE * state：      状态量数组
+int N：                   状态量数组维数
+unsigned char * image：   图像数据，按从左至右，从上至下的顺序扫描，
+颜色排列次序：RGB, RGB, ...
+int W, H：                图像的宽和高
+float * ObjectHist：      目标直方图
+int hbins：               目标直方图条数
+输出参数：
+float * weight：          更新后的权重
+*/
 void Observe( SPACESTATE * state, float * weight, int N,
 			 unsigned char * image, int W, int H,
 			 float * ObjectHist0 )
@@ -378,21 +460,27 @@ void Observe( SPACESTATE * state, float * weight, int N,
 	for ( i = 0; i < N; i++ )
 	{
 		CalcuColorHistogram( state[i].xt, state[i].yt,state[i].Hxt, state[i].Hyt,
-			image, W, H, ColorHist0, nbin );
-
-		rho0 = CalcuBhattacharyya( ColorHist0, ObjectHist0, nbin );
-		weights0[i] = CalcuWeightedPi( rho0 );	
+			image, W, H, ColorHist0, nbin );  /*(1)计算彩色直方图分布*/
+		rho0 = CalcuBhattacharyya( ColorHist0, ObjectHist0, nbin );/*(2)Bhattacharyya系数*/
+		weights0[i] = CalcuWeightedPi( rho0 );/*(3)根据计算得的Bhattacharyya系数计算各个权重值*/
 		wei_sum += weights0[i];
 	}
 	for( i = 0; i < N; i++)
 		weight[i] = weights0[i] / wei_sum;
-
 	delete ColorHist0;
 	delete weights0;
-
 	return;	
 }
 
+/*
+估计，根据权重，估计一个状态量作为跟踪输出
+输入参数：
+SPACESTATE * state：      状态量数组
+float * weight：          对应权重
+int N：                   状态量数组维数
+输出参数：
+SPACESTATE * EstState：   估计出的状态量
+*/
 void Estimation( SPACESTATE * state, float * weight, int N, 
 				SPACESTATE & EstState )
 {
@@ -428,6 +516,19 @@ void Estimation( SPACESTATE * state, float * weight, int N,
 	return;
 }
 
+
+/*
+模型更新
+输入参数：
+SPACESTATE EstState：   状态量的估计值
+float * TargetHist：    目标直方图
+int bins：              直方图条数
+float PiT：             阈值（权重阈值）
+unsigned char * img：   图像数据，RGB形式
+int W, H：              图像宽高
+输出：
+float * TargetHist：    更新的目标直方图
+*/
 # define ALPHA_COEFFICIENT      0.2     /* 目标模型更新权重取0.1-0.3 */
 
 int ModelUpdate( SPACESTATE EstState, float * TargetHist0,  float PiT,
@@ -459,6 +560,7 @@ int ModelUpdate( SPACESTATE EstState, float * TargetHist0,  float PiT,
 	return( rvalue );
 }
 
+/*粒子滤波跟踪*/
 int ColorParticleTracking( unsigned char * image, int &W, int &H, int & xc, int & yc,
 						   int & Wx_h, int & Hy_h,float & max_weight)
 {
@@ -469,8 +571,7 @@ int ColorParticleTracking( unsigned char * image, int &W, int &H, int & xc, int 
 	/*传播：采样状态方程，对状态变量进行预测*/
 	Propagate(states,NParticle);
 	/*观测：对状态量进行更新，更新权值*/
-	//Observe(states, weights, NParticle , image, W, H, ModelHist ,nbin);
-	Observe(states, weights, NParticle , image, W, H, ModelHist0);
+	Observe(states, weights, NParticle , image, W, H, ModelHist);
 	/*估计：对状态量进行估计，提取位置量*/
 	Estimation(states, weights, NParticle, EState);
 	xc = EState.xt;
@@ -478,8 +579,7 @@ int ColorParticleTracking( unsigned char * image, int &W, int &H, int & xc, int 
 	Wx_h = EState.Hxt;
 	Hy_h = EState.Hyt;
 	/*模型更新*/
-	//ModelUpdate(EState ,ModelHist ,nbin ,Pi_Thres ,image ,W ,H);
-	ModelUpdate( EState ,ModelHist0 ,Pi_Thres ,image ,W ,H);
+	ModelUpdate( EState ,ModelHist ,Pi_Thres ,image ,W ,H);
 	/*计算最大权重值*/
 	max_weight = weights[0];
 	for(i = 1;i < NParticle ;i++)
@@ -491,10 +591,11 @@ int ColorParticleTracking( unsigned char * image, int &W, int &H, int & xc, int 
 		return(1);
 }
 
+//把iplimage转到img数组中
 void IplToImge(Mat src,int w,int h)
 {
-	int i,j;	
-	for (i = 0;i<h;i++)  //转成正向图像  行
+	int i,j;	          //转成正向图像
+	for (i = 0;i<h;i++)   //行
 		for(j=0;j<w;j++)  //列
 		{
 			img[(i*w+j)*3] = src.at<Vec3b>(i,j)[2];
@@ -596,10 +697,10 @@ int main(){
 */
 /*结束获取目标框位置*/
 
-	string first_file = "C://"; 
+	string first_file = "C:/Users/18016/Desktop/ObjectTracking/learnopencv-master/tracking/videos/01.png"; 
 	VideoCapture sequence(first_file);
 	VideoCapture seq;
-	//seq.open("");
+	//seq.open("C:/Users/18016/Desktop/ObjectTracking/learnopencv-master/tracking/videos/chaplin.mp4");
 	seq.open(0);
 	if (!sequence.isOpened())
 	{
@@ -646,12 +747,31 @@ int main(){
 		// Update 更新
 		else{
 			result = tracker.update(frame);
-			if (tracker.peak_value < 0.6) {
-				cout << "target lost"<<endl;
+			rho_v = ColorParticleTracking(img, Wid, Hei, xout, yout, WidOut, HeiOut, max_weight);
+			if (rho_v == 1 && max_weight > 0.0001) {
+				//rectangle(frame, Point(xout - WidOut, yout - HeiOut),
+				//	Point(xout + WidOut, yout + HeiOut), cvScalar(255, 0, 0), 1, 8);//蓝色
+				//xin = xout;
+				//yin = yout;         //上一帧的输出作为这一帧的输入
+				//tracker.init(Rect(xout - WidOut, yout - HeiOut, WidOut * 2, HeiOut * 2), frame);
+				result.x = xout - result.width / 2;
+				result.y = yout - result.height / 2;
+				//tracker.init(result, frame);
+				tracker.updateTrackerPosition(result);
 			}
 			else {
-				rectangle(frame, Point(result.x + result.width / 2 - WidOut, result.y + result.height / 2 - HeiOut),
-					Point(result.x + result.width / 2 + WidOut, result.y + result.height / 2 + HeiOut),
+				cout << "pf lost." << endl;
+			}
+			if (tracker.peak_value < 0.6) {
+				cout << "target lost"<<endl;
+				//Initialize(xMin + width / 2, yMin + height / 2, width / 2, height / 2, img, Wid, Hei);	
+			}
+			else {
+				//rectangle(frame, Point(result.x + result.width / 2 - WidOut, result.y + result.height / 2 - HeiOut),
+				//	Point(result.x + result.width / 2 + WidOut, result.y + result.height / 2 + HeiOut),
+				//	Scalar(0, 0, 255), 1, 8);//红色
+				rectangle(frame,Point(result.x,result.y), 
+					Point(result.x + result.width, result.y + result.height), 
 					Scalar(0, 0, 255), 1, 8);//红色
 			}
 			/*for ( int i = 0; i < NParticle; i++ )
@@ -662,16 +782,7 @@ int main(){
 				states[i].Hyt = result.height/2;
 			}*/
 			//rho_v = ColorParticleTracking( img, Wid, Hei, WidOut, HeiOut, max_weight);
-			rho_v = ColorParticleTracking(img, Wid, Hei, xout, yout, WidOut, HeiOut, max_weight);
-			if (rho_v == 1 && max_weight > 0.0001) {
-				rectangle(frame, cvPoint(xout - WidOut, yout - HeiOut),
-					cvPoint(xout + WidOut, yout + HeiOut), cvScalar(255, 0, 0), 2, 8, 0);//蓝色
-				xin = xout; 
-				yin = yout;         //上一帧的输出作为这一帧的输入
-			}
-			else {
-				cout << "pf lost." << endl;
-			}	
+				
 			//tracker._roi.width=2*WidOut;
 			//tracker._roi.height=2*HeiOut;
 			//resultsFile << result.x << "," << result.y << "," << result.width << "," << result.height << endl;
@@ -695,6 +806,5 @@ int main(){
 	}
 	resultsFile.close();
 	//listFile.close();
-
 }
 
