@@ -8,6 +8,7 @@
 #include <math.h>
 #include <time.h>
 #include "kcftracker.hpp"
+#include "lbp.h"
 
 using namespace std;
 using namespace cv;
@@ -19,6 +20,7 @@ using namespace cv;
 # define R_SHIFT    5  /* 与上述直方图条数对应 */
 # define G_SHIFT    5  /* 的R、G、B分量左移位数 */
 # define B_SHIFT    5  /* log2( 256/16 )为移动位数*/
+# define LBP_SHIFT  5  /* LBP特征的直方图偏移量*/
 /*为了产生一个服从正态分布的随机数，采用Park and Miller方法，有参考论文，看不懂*/
 #define IA 16807
 #define IM 2147483647
@@ -40,13 +42,15 @@ typedef struct __SpaceState {  /* 状态空间变量 */
 
 
 unsigned char *img;							 //把iplimg改到char*,便于计算...
+unsigned char * himg;
 
 int Wid, Hei;								 //图像的大小
 //int WidIn,HeiIn;							 //输入的半宽与半高
 int WidOut, HeiOut;							 //输出的半宽与半高
 int xin, yin;								 //跟踪时输入的中心点
 int xout, yout;								 //跟踪时得到的输出中心点
-int nbin;									 //直方图条数
+int nbin = 512;									 //直方图条数
+int Lsize = 8;                               //LBP直方图条数 8
 
 const float DELTA_T = (float)0.05;           //帧频，可以为30、25、15、10等0.05
 //const int POSITION_DISTURB = 15;           //位置扰动幅度15
@@ -57,6 +61,7 @@ const float Pi_Thres = (float)0.9;           //权重阈值0.9
 long ran_seed = 802163120;                   //随机数种子,为全局变量,设置缺省值802163120
 int NParticle = 100;                         //粒子个数75
 float* ModelHist = NULL;                     //模型直方图
+float * LBPHist = NULL;                      //颜色直方图 
 SPACESTATE* states = NULL;                   //状态数组
 float* weights = NULL;                       //每个粒子的权重
 
@@ -65,7 +70,7 @@ bool drawing_box = false;                    //判断是否画矩形框
 float xMin, yMin, width, height;             //跟踪框的坐标(xMin,yMin),宽,高
 
 
-Mat frame;									 //帧
+Mat frame,gray_image,texture;				 //帧
 Rect initbox;                                //初始跟踪框
 
 //设置种子数，一般利用系统时间来进行设置，也可以直接传入一个long型整数
@@ -94,49 +99,63 @@ int bins：             彩色直方图的条数R_BIN*G_BIN*B_BIN（这里取8x8
 */
 void CalcuColorHistogram(int x0, int y0, int Wx, int Hy,
 	unsigned char * image, int W, int H,
-	float * ColorHist, int bins)
+	float * ColorHist, float * TextureHist, int bins)
 {
+
 	int x_begin, y_begin;  /* 指定图像区域的左上角坐标 */
 	int y_end, x_end;
-	int x, y, i, index;
+	int x, y, i, index, index2;
 	int r, g, b;
 	float k, r2, f;
-	int a2;
+	int a2, count = 0;
 
-	for (i = 0; i < bins; i++)     /* 直方图各个值赋0 */
+	for (i = 0; i < bins; i++)     /* 直方图各个值赋0 有问题*/
 		ColorHist[i] = 0.0;
+	for (i = 0; i < Lsize; i++)
+		TextureHist[i] = 0.0;
 	/* 考虑特殊情况：x0, y0在图像外面，或者，Wx<=0, Hy<=0 */
 	/* 此时强制令彩色直方图为0 */
 	if ((x0 < 0) || (x0 >= W) || (y0 < 0) || (y0 >= H)
-		|| (Wx <= 0) || (Hy <= 0)) return;
+		|| (Wx <= 0) || (Hy <= 0))
+	{
+		cout << "44" << endl;
+		return;
+	}
 
+	cout << "5" << endl;
 	x_begin = x0 - Wx;               /* 计算实际高宽和区域起始点 */
 	y_begin = y0 - Hy;
 	if (x_begin < 0) x_begin = 0;
 	if (y_begin < 0) y_begin = 0;
 	x_end = x0 + Wx;
 	y_end = y0 + Hy;
-	if (x_end >= W) x_end = W - 1;
+	if (x_end >= W) x_end = W - 1;//超出范围的话就用画的框的边界来赋值粒子的区域
 	if (y_end >= H) y_end = H - 1;
-	a2 = Wx * Wx + Hy * Hy;                /* 计算核函数半径平方a^2 */
+	a2 = Wx * Wx + Hy * Hy;                /* 计算半径平方a^2 */
 	f = 0.0;                         /* 归一化系数 */
 	for (y = y_begin; y <= y_end; y++)
 		for (x = x_begin; x <= x_end; x++)
 		{
 			r = image[(y*W + x) * 3] >> R_SHIFT;   /* 计算直方图 */
 			g = image[(y*W + x) * 3 + 1] >> G_SHIFT; /*移位位数根据R、G、B条数 */
-			b = image[(y*W + x) * 3 + 2] >> B_SHIFT;//相当于将R\G\B三个分量做加和，像素值范围0~255，分八份，则对应二值化向右移5位
+			b = image[(y*W + x) * 3 + 2] >> B_SHIFT;
+			index2 = himg[y*W + x] >> LBP_SHIFT;
 			index = r * G_BIN * B_BIN + g * B_BIN + b;//把当前rgb换成一个索引
-			//index = r * G_BIN + g ;
 			r2 = (float)(((y - y0)*(y - y0) + (x - x0)*(x - x0))*1.0 / a2); /* 计算半径平方r^2 */
-			//区域内的点到中心点距离的平方最大值是a2，r2反应了区域内各点距离中心的远近
-			k = 1 - r2;   /* 核函数k(r) = 1-r^2, |r| < 1; 其他值 k(r) = 0 ；用核函数分配权重*/
+			k = 1 - r2;   /* k(r) = 1-r^2, |r| < 1; 其他值 k(r) = 0 ，影响力*/
 			f = f + k;
 			ColorHist[index] = ColorHist[index] + k;  /* 计算核密度加权彩色直方图 */
+			TextureHist[index2] = TextureHist[index2] + 1;
+			count++;
 		}
 	for (i = 0; i < bins; i++)     /* 归一化直方图 */
+	{
 		ColorHist[i] = ColorHist[i] / f;
-
+	}
+	for (i = 0; i < Lsize; i++)
+	{
+		TextureHist[i] = TextureHist[i] / count;
+	}
 	return;
 }
 
@@ -162,13 +181,21 @@ float CalcuBhattacharyya(float * p, float * q, int bbins)
 
 //# define RECIP_SIGMA  3.98942280401    1/(sqrt(2*pi)*sigma), 这里sigma = 0.1 
 # define SIGMA2       0.02           /* 2*sigma^2, 这里sigma = 0.1 */
+# define ALPHA        0.7
+# define BETA         0.3
+# define sigmac       -0.02
+# define sigmag       -0.02
 /*根据巴氏系数计算各个权值*/
-float CalcuWeightedPi(float rho)
+float CalcuWeightedPi(float rho1, float rho2)
 {
-	float pi_n, d2;
-	d2 = 1 - rho;
-	//pi_n = (float)(RECIP_SIGMA * exp( - d2/SIGMA2 ));
-	pi_n = (float)(exp(-d2 / SIGMA2));
+	float pi_n, d_color2;
+	float d_grad2 = 1 - rho2;
+	d_color2 = 1 - rho1;
+	//float D2 = ALPHA * d_color2 + BETA * d_grad2;
+	//pi_n = (float)(exp(-D2 / SIGMA2));
+	float a = d_color2 * ALPHA / sigmac;
+	float b = d_grad2 * BETA / sigmag;
+	pi_n = (float)(exp(a + b));
 	return(pi_n);
 }
 
@@ -234,32 +261,31 @@ int Wx, Hy：         目标的半宽高
 unsigned char * img：图像数据,RGB形式
 int W, H：           图像宽高
 */
-int Initialize(int x0, int y0, int Wx, int Hy, unsigned char* img, int W, int H)
+int Initialize(int x0, int y0, int Wx, int Hy,
+	unsigned char * img, int W, int H)
 {
 	int i, j;
-	float rn[7];
-	set_seed(0);  //使用系统时钟作为种子
-	states = new SPACESTATE[NParticle];//申请状态数组的空间
-	if (states == NULL)
-		return (-2);
-	weights = new float[NParticle];
-	if (weights == NULL)
-		return (-3);
-	nbin = R_BIN * G_BIN * B_BIN;  //确定直方图条数
-	ModelHist = new float[nbin];  //申请直方图内存
-	if (ModelHist == NULL)
-		return(-1);
-	/*计算目标模板直方图*/
-	CalcuColorHistogram(x0, y0, Wx, Hy, img, W, H, ModelHist, nbin);
-	/*  初始化粒子状态（以x0，y0，0，,0，Wx，Hy，0）为中心呈N（0,0.6）正态分布? */
+	srand((unsigned int)(time(NULL)));
+	states = new SPACESTATE[NParticle]; /* 申请状态数组的空间 */
+	weights = new float[NParticle];     /* 申请粒子权重数组的空间 */
+	nbin = R_BIN * G_BIN * B_BIN; /* 确定直方图条数 */
+	ModelHist = new float[nbin]; /* 申请直方图内存 */
+	if (ModelHist == NULL) return(-1);
+	LBPHist = new float[Lsize];
+	if (LBPHist == NULL)return (-1);
+
+	/* 计算目标模板直方图 */
+	CalcuColorHistogram(x0, y0, Wx, Hy, img, W, H, ModelHist, LBPHist, nbin);
+	/* 初始化粒子状态(以(x0,y0,1,1,Wx,Hy,0.1)为中心呈N(0,0.4)正态分布) */
 	states[0].xt = x0;
 	states[0].yt = y0;
-	states[0].v_xt = (float)0.0;
-	states[0].v_yt = (float)0.0;
+	states[0].v_xt = (float)0.0; // 1.0
+	states[0].v_yt = (float)0.0; // 1.0
 	states[0].Hxt = Wx;
 	states[0].Hyt = Hy;
-	states[0].at_dot = (float)0.0;
-	weights[0] = (float)(1.0 / NParticle);
+	states[0].at_dot = (float)0.0; // 0.1
+	weights[0] = (float)(1.0 / NParticle); /* 0.9; */
+	float rn[7];
 	for (i = 1; i < NParticle; i++)
 	{
 		for (j = 0; j < 7; j++) rn[j] = randGaussian(0, (float)0.6); /* 产生7个随机高斯分布的数 */
@@ -425,29 +451,31 @@ float * weight：          更新后的权重
 */
 void Observe(SPACESTATE * state, float * weight, int N,
 	unsigned char * image, int W, int H,
-	float * ObjectHist0)
+	float * ObjectHist, float * ObjectLBP)
 {
 	int i;
-	float * ColorHist0;
-	float * weights0 = NULL;
-	float rho0;
-	float wei_sum = 0;
+	float * ColorHist;
+	float rho1, rho2;
+	float * lbp;
 
-	ColorHist0 = new float[nbin];
-	weights0 = new float[NParticle];
+	ColorHist = new float[nbin];
+	lbp = new float[Lsize];
 
 	for (i = 0; i < N; i++)
 	{
+		/* (1) 计算彩色直方图分布 */
 		CalcuColorHistogram(state[i].xt, state[i].yt, state[i].Hxt, state[i].Hyt,
-			image, W, H, ColorHist0, nbin);  /*(1)计算彩色直方图分布*/
-		rho0 = CalcuBhattacharyya(ColorHist0, ObjectHist0, nbin);/*(2)Bhattacharyya系数*/
-		weights0[i] = CalcuWeightedPi(rho0);/*(3)根据计算得的Bhattacharyya系数计算各个权重值*/
-		wei_sum += weights0[i];
+			image, W, H, ColorHist, lbp, nbin);
+		/* (2) Bhattacharyya系数 */
+		rho1 = CalcuBhattacharyya(ColorHist, ObjectHist, nbin);
+		rho2 = CalcuBhattacharyya(lbp, ObjectLBP, Lsize);
+		/* (3) 根据计算得的Bhattacharyya系数计算各个权重值 */
+		weight[i] = CalcuWeightedPi(rho1, rho2);
 	}
-	for (i = 0; i < N; i++)
-		weight[i] = weights0[i] / wei_sum;   //归一化权重
-	delete[] ColorHist0;
-	delete[] weights0;
+
+	delete[] ColorHist;
+	delete[] lbp;
+
 	return;
 }
 
@@ -485,14 +513,22 @@ void Estimation(SPACESTATE * state, float * weight, int N,
 	}
 	//cout << weight_sum << endl;
 	/* 求平均 */
-	//if (weight_sum <= 0) weight_sum = 1; /* 防止被0除，一般不会发生 */
-	EstState.at_dot = at_dot / weight_sum;
+	if (weight_sum <= 0) weight_sum = 1;   // 防止被0除，一般不会发生
+	/*EstState.at_dot = at_dot / weight_sum;
 	EstState.Hxt = (int)(Hxt + 0.5);
 	EstState.Hyt = (int)(Hyt + 0.5);
 	EstState.v_xt = v_xt;
 	EstState.v_yt = v_yt;
 	EstState.xt = (int)(xt + 0.5);
-	EstState.yt = (int)(yt + 0.5);
+	EstState.yt = (int)(yt + 0.5);*/
+	EstState.at_dot = at_dot / weight_sum;
+	EstState.Hxt = (int)(Hxt / weight_sum);
+	EstState.Hyt = (int)(Hyt / weight_sum);
+	EstState.v_xt = v_xt / weight_sum;
+	EstState.v_yt = v_yt / weight_sum;
+	EstState.xt = (int)(xt / weight_sum);
+	EstState.yt = (int)(yt / weight_sum);
+
 	return;
 }
 
@@ -511,38 +547,77 @@ float * TargetHist：    更新的目标直方图
 */
 # define ALPHA_COEFFICIENT      0.2     /* 目标模型更新权重取0.1-0.3 */
 
-int ModelUpdate(SPACESTATE EstState, float * TargetHist0, float PiT,
+void ModelUpdate(SPACESTATE EstState, float * TargetHist, float * TargetLBP, float PiT,
 	unsigned char * img, int W, int H)
 {
-	float * EstHist0, Bha0, Pi0;
-	int i, rvalue = -1;
+	float * EstHist, Bha1, Bha2, Pi_E;
+	int i;
+	float * lbp_;
 
-	EstHist0 = new float[nbin];
-	/* (1)在估计值处计算目标颜色直方图 */
+	EstHist = new float[nbin];
+	lbp_ = new float[Lsize];
+	/* (1)在估计值处计算目标直方图 */
 	CalcuColorHistogram(EstState.xt, EstState.yt, EstState.Hxt,
-		EstState.Hyt, img, W, H, EstHist0, nbin);
+		EstState.Hyt, img, W, H, EstHist, lbp_, nbin);
 	/* (2)计算Bhattacharyya系数 */
-	Bha0 = CalcuBhattacharyya(EstHist0, TargetHist0, nbin);
+	Bha1 = CalcuBhattacharyya(EstHist, TargetHist, nbin);
+	Bha2 = CalcuBhattacharyya(lbp_, TargetLBP, Lsize);
 	/* (3)计算概率权重 */
-	Pi0 = CalcuWeightedPi(Bha0);
-
-	if (Pi0 > PiT)
+	Pi_E = CalcuWeightedPi(Bha1, Bha2);
+	//float d1 = sqrt(1 - Bha1);
+	//float d2 = sqrt(1 - Bha2);
+	if (Pi_E > PiT)
 	{
 		for (i = 0; i < nbin; i++)
 		{
-			TargetHist0[i] = (float)((1.0 - ALPHA_COEFFICIENT) * TargetHist0[i]
-				+ ALPHA_COEFFICIENT * EstHist0[i]);
-		}
-		rvalue = 1;
-	}
+			TargetHist[i] = (float)((1.0 - ALPHA_COEFFICIENT) * TargetHist[i]
+				+ ALPHA_COEFFICIENT * EstHist[i]);
 
-	delete[] EstHist0;
-	return(rvalue);
+		}
+		for (i = 0; i < Lsize; i++)
+		{
+			TargetLBP[i] = (float)((1.0 - ALPHA_COEFFICIENT) * TargetLBP[i]
+				+ ALPHA_COEFFICIENT * lbp_[i]);
+		}
+	}
+	/*if (d1 < 0.1)
+	{
+		for (i = 0; i < bins; i++)
+		{
+			TargetHist[i] = (float)((1.0 - ALPHA_COEFFICIENT) * TargetHist[i]
+				+ ALPHA_COEFFICIENT * EstHist[i]);
+
+		}
+	}
+	if (d2 < 0.2)
+	{
+		for (i = 0; i < Lsize; i++)
+		{
+			TargetLBP[i] = (float)((1.0 - ALPHA_COEFFICIENT) * TargetLBP[i]
+				+ ALPHA_COEFFICIENT * lbp_[i]);
+		}
+	}*/
+	delete[] EstHist;
+	delete[] lbp_;
+}
+
+/*
+系统清除
+*/
+void ClearAll()
+{
+	if (ModelHist != NULL) delete[] ModelHist;
+	if (states != NULL) delete[] states;
+	if (weights != NULL) delete[] weights;
+	if (img != NULL) delete[] img;
+	if (himg != NULL) delete[] himg;
+	if (LBPHist != NULL) delete[] LBPHist;
+	return;
 }
 
 /*粒子滤波跟踪*/
-int ColorParticleTracking(unsigned char * image, int &W, int &H, int & xc, int & yc,
-	int & Wx_h, int & Hy_h, float & max_weight)
+int ColorParticleTracking(unsigned char * image, int &W, int &H, 
+	int & xc, int & yc,	int & Wx_h, int & Hy_h, float & max_weight)
 {
 	SPACESTATE EState;
 	int i;
@@ -551,7 +626,7 @@ int ColorParticleTracking(unsigned char * image, int &W, int &H, int & xc, int &
 	/*传播：采样状态方程，对状态变量进行预测*/
 	Propagate(states, NParticle);
 	/*观测：对状态量进行更新，更新权值*/
-	Observe(states, weights, NParticle, image, W, H, ModelHist);
+	Observe(states, weights, NParticle, image, W, H, ModelHist, LBPHist );
 	/*估计：对状态量进行估计，提取位置量*/
 	Estimation(states, weights, NParticle, EState);
 	xc = EState.xt;
@@ -559,16 +634,45 @@ int ColorParticleTracking(unsigned char * image, int &W, int &H, int & xc, int &
 	Wx_h = EState.Hxt;
 	Hy_h = EState.Hyt;
 	/*模型更新*/
-	ModelUpdate(EState, ModelHist, Pi_Thres, image, W, H);
+	ModelUpdate(EState, ModelHist, LBPHist, Pi_Thres, image, W, H);
 	/*计算最大权重值*/
 	max_weight = weights[0];
 	for (i = 1; i < NParticle; i++)
 		max_weight = max_weight < weights[i] ? weights[i] : max_weight;
 	/*进行合法性检验，不合法返回-1*/
-	if (xc < 0 || yc < 0 || xc >= W || yc >= H || Wx_h <= 0 || Hy_h <= 0)
+	if (xc < 0 || yc < 0 || xc >= W || yc >= H || Wx_h <= 0 || Hy_h <= 0) {
+		cout << "-10" << endl;
 		return(-1);
+	}
 	else
 		return(1);
+}
+
+//彩色图像转灰度图
+void ToGray(Mat& src, Mat& dst)
+{
+	int i, j;
+	for (i = 0; i < src.rows; i++)
+	{
+		for (j = 0; j < src.cols; j++)
+		{
+			dst.at<uchar>(i, j) = saturate_cast<uchar>((src.at<Vec3b>(i, j)[0] * 30 + src.at<Vec3b>(i, j)[1] * 150 +
+				src.at<Vec3b>(i, j)[2] * 76) >> 8);
+		}
+	}
+}
+
+void rgb2gray(unsigned char *src, unsigned char *dest, int width, int height)
+{
+	int r, g, b;
+	for (int i = 0; i < width*height; ++i)
+	{
+		b = *src++; // load 
+		g = *src++; // load 
+		r = *src++; // load 
+		// build weighted average:
+		*dest++ = (r * 76 + g * 150 + b * 30) >> 8;
+	}
 }
 
 //把iplimage转到img数组中
@@ -578,11 +682,14 @@ void IplToImge(Mat src, int w, int h)
 	for (i = 0; i < h; i++)   //行
 		for (j = 0; j < w; j++)  //列
 		{
-			img[(i*w + j) * 3] = src.at<Vec3b>(i, j)[2];
-			img[(i*w + j) * 3 + 1] = src.at<Vec3b>(i, j)[1];
-			img[(i*w + j) * 3 + 2] = src.at<Vec3b>(i, j)[0];
+			img[(i*w + j) * 3] = src.at<Vec3b>(i, j)[2];//R
+			img[(i*w + j) * 3 + 1] = src.at<Vec3b>(i, j)[1];//G
+			img[(i*w + j) * 3 + 2] = src.at<Vec3b>(i, j)[0];//B
+			himg[i*w + j] = texture.at<uchar>(i, j);
 		}
 }
+
+
 
 //通过鼠标划取一个初始矩形框
 void on_MouseHandler(int event, int x, int y, int flags, void* param)
@@ -634,6 +741,46 @@ void on_MouseHandler(int event, int x, int y, int flags, void* param)
 
 }
 
+int bSelectObject = 0;
+Point origin;
+Rect selection;//一个矩形对象
+int WidIn, HeiIn;//输入的半宽与半高
+bool track = false;//是否跟踪
+
+void mouseHandler(int event, int x, int y, int flags, void* param)
+{
+	int centerx, centery;
+
+	if (bSelectObject)//如果画了方框
+	{
+		selection.x = MIN(x, origin.x);
+		selection.y = MIN(y, origin.y);
+		selection.width = abs(x - origin.x);
+		selection.height = abs(y - origin.y);
+	}
+
+	switch (event)
+	{
+	case CV_EVENT_LBUTTONDOWN://按下左键时
+		origin = Point(x, y);//声明一个点的位置 origin即按下鼠标的起始点的位置
+		selection = Rect(x, y, 0, 0);//框的构造函数 矩形类
+		bSelectObject = 1;
+		pause = true;
+		break;
+	case CV_EVENT_LBUTTONUP://释放左键时
+		bSelectObject = 0;
+		centerx = selection.x + selection.width / 2;
+		centery = selection.y + selection.height / 2;
+		WidIn = selection.width / 2;
+		HeiIn = selection.height / 2;
+		Initialize(centerx, centery, WidIn, HeiIn, img, Wid, Hei);
+		//roi_lbp = Mat(texture, selection);
+		track = true;
+		pause = false;
+		break;
+	}
+}
+
 
 
 int main() {
@@ -648,6 +795,7 @@ int main() {
 	int rho_v;//表示合法值
 	float max_weight;//最大权值
 	int correct;
+	int star = 0;
 
 	KCFTracker tracker(HOG, FIXEDWINDOW, MULTISCALE, LAB);
 
@@ -680,19 +828,20 @@ int main() {
 	string first_file = "C:/Users/18016/Desktop/ObjectTracking/learnopencv-master/tracking/videos/01.png";
 	VideoCapture sequence(first_file);
 	VideoCapture seq;
-	seq.open("C:/Users/18016/Desktop/ObjectTracking/learnopencv-master/tracking/videos/chaplin.mp4");
-	//seq.open(0);
+	//seq.open("C:/Users/18016/Desktop/ObjectTracking/learnopencv-master/tracking/videos/chaplin.mp4");
+	seq.open(0);
 	if (!sequence.isOpened())
 	{
 		cout << "Failed to open the image sequence!\n" << endl;
 		return 1;
 	}
 	namedWindow("tracking", 1);
-	setMouseCallback("tracking", on_MouseHandler, 0);
+	//setMouseCallback("tracking", on_MouseHandler, 0);
+	setMouseCallback("tracking", mouseHandler, 0);
 	// Write Results
-	ofstream resultsFile;
+	//ofstream resultsFile;
 	string resultsPath = "D:\\output.txt";
-	resultsFile.open(resultsPath);
+	//resultsFile.open(resultsPath);
 
 	// Frame counter
 	int nFrames = 0;
@@ -706,70 +855,89 @@ int main() {
 			cout << "End of Sequence" << endl;
 			break;
 		}
-		if (frame.rows >= 480 || frame.cols >= 640)
-			resize(frame, frame, Size(640, 480));
+		//if (frame.rows >= 480 || frame.cols >= 640)
+		//	resize(frame, frame, Size(640, 480));
 		imshow("tracking", frame);
-		Hei = frame.rows;  //行
-		Wid = frame.cols;  //列
-		img = new unsigned char[Wid*Hei * 3];   //unsigned char *img;  便于计算...
+		if (!star)//初始化
+		{
+			Wid = frame.cols;
+			Hei = frame.rows;
+			img = new unsigned char[Wid * Hei * 3];
+			himg = new unsigned char[Wid*Hei];
+			gray_image.create(Hei, Wid, CV_8UC1);
+			star = 1;
+		}
+		//Hei = frame.rows;  //行
+		//Wid = frame.cols;  //列
+		//img = new unsigned char[Wid*Hei * 3];   //unsigned char *img;  便于计算...
+		//himg = new unsigned char[Wid*Hei];
+		//gray_image.create(Hei, Wid, CV_8UC1);
+		//rgb2gray(frame.data, gray_image.data, Wid, Hei);
+		ToGray(frame, gray_image);
+		texture = LBP(gray_image);
+
 		IplToImge(frame, Wid, Hei);
+		imshow("gray", texture);
 		double time0 = static_cast<double>(getTickCount());
 		// First frame, give the groundtruth to the tracker
-		if (nFrames == 0) {
+		/*if (nFrames == 0) {
 			while (pause)
 				if (waitKey(0) == 'p')
 					pause = false;
 			tracker.init(Rect(xMin, yMin, width, height), frame);
 			rectangle(frame, Point(xMin, yMin), Point(xMin + width, yMin + height), Scalar(0, 255, 255), 1, 8);
-			Initialize(xMin + width / 2, yMin + height / 2, width / 2, height / 2, img, Wid, Hei);
+			//Initialize(xMin + width / 2, yMin + height / 2, width / 2, height / 2, img, Wid, Hei);
 			//resultsFile << xMin << "," << yMin << "," << width << "," << height << endl;
-		}
+		}*/
 		// Update 更新
-		else {
-			result = tracker.update(frame);
+		//else {
+			//result = tracker.update(frame);
+		if (track)
+		{
 			rho_v = ColorParticleTracking(img, Wid, Hei, xout, yout, WidOut, HeiOut, max_weight);
-			if (rho_v == 1 && max_weight > 0.0001) {
-				rectangle(frame, Point(xout - WidOut, yout - HeiOut),
-					Point(xout + WidOut, yout + HeiOut), cvScalar(255, 0, 0), 1, 8);//蓝色
-				//xin = xout;
-				//yin = yout;         //上一帧的输出作为这一帧的输入
-				//tracker.init(Rect(xout - WidOut, yout - HeiOut, WidOut * 2, HeiOut * 2), frame);
-				//result.x = xout - result.width / 2;
-				//result.y = yout - result.height / 2;
-				//tracker.init(result, frame);
-				//tracker.updateTrackerPosition(result);
-			}
-			else {
-				cout << "pf lost." << endl;
-			}
-			//if (tracker.peak_value < 0.6) {
-			//	cout << "target lost" << endl;
-				//Initialize(xMin + width / 2, yMin + height / 2, width / 2, height / 2, img, Wid, Hei);	
-			//}
-			//else {
-				//rectangle(frame, Point(result.x + result.width / 2 - WidOut, result.y + result.height / 2 - HeiOut),
-				//	Point(result.x + result.width / 2 + WidOut, result.y + result.height / 2 + HeiOut),
-				//	Scalar(0, 0, 255), 1, 8);//红色
-				rectangle(frame, Point(result.x, result.y),
-					Point(result.x + result.width, result.y + result.height),
-					Scalar(0, 0, 255), 1, 8);//红色
-			//}
-			/*for ( int i = 0; i < NParticle; i++ )
-			{
-				states[i].xt = result.x+result.width/2;
-				states[i].yt = result.y+result.height/2;
-				states[i].Hxt = result.width/2;
-				states[i].Hyt = result.height/2;
-			}*/
-			//rho_v = ColorParticleTracking( img, Wid, Hei, WidOut, HeiOut, max_weight);
+			//if (rho_v == 1 && max_weight > 0.0001) {
+			rectangle(frame, Point(xout - WidOut, yout - HeiOut),
+				Point(xout + WidOut, yout + HeiOut), cvScalar(255, 0, 0), 1, 8);//蓝色
+			//xin = xout;
+			//yin = yout;         //上一帧的输出作为这一帧的输入
+			//tracker.init(Rect(xout - WidOut, yout - HeiOut, WidOut * 2, HeiOut * 2), frame);
+			//result.x = xout - result.width / 2;
+			//result.y = yout - result.height / 2;
+			//tracker.init(result, frame);
+			//tracker.updateTrackerPosition(result);
+		//}
+		//else {
+		//	cout << "pf lost." << endl;
+		//}
+		//if (tracker.peak_value < 0.6) {
+		//	cout << "target lost" << endl;
+			//Initialize(xMin + width / 2, yMin + height / 2, width / 2, height / 2, img, Wid, Hei);	
+		//}
+		//else {
+			//rectangle(frame, Point(result.x + result.width / 2 - WidOut, result.y + result.height / 2 - HeiOut),
+			//	Point(result.x + result.width / 2 + WidOut, result.y + result.height / 2 + HeiOut),
+			//	Scalar(0, 0, 255), 1, 8);//红色
+			rectangle(frame, Point(result.x, result.y),
+				Point(result.x + result.width, result.y + result.height),
+				Scalar(0, 0, 255), 1, 8);//红色
+		//}
+		/*for ( int i = 0; i < NParticle; i++ )
+		{
+			states[i].xt = result.x+result.width/2;
+			states[i].yt = result.y+result.height/2;
+			states[i].Hxt = result.width/2;
+			states[i].Hyt = result.height/2;
+		}*/
+		//rho_v = ColorParticleTracking( img, Wid, Hei, WidOut, HeiOut, max_weight);
 
-			//tracker._roi.width=2*WidOut;
-			//tracker._roi.height=2*HeiOut;
-			//resultsFile << result.x << "," << result.y << "," << result.width << "," << result.height << endl;
+		//tracker._roi.width=2*WidOut;
+		//tracker._roi.height=2*HeiOut;
+		//resultsFile << result.x << "," << result.y << "," << result.width << "," << result.height << endl;
+	//}
+	//cout << tracker.peak_value << endl;
+	//resultsFile << tracker.peak_value << endl<<max_weight<<endl;
+	//cout << nFrames << endl;
 		}
-		cout << tracker.peak_value << endl;
-		resultsFile << tracker.peak_value << endl<<max_weight<<endl;
-		cout << nFrames << endl;
 		nFrames++;
 		time0 = getTickFrequency() / ((double)getTickCount() - time0);
 		string fps = to_string(time0);
@@ -786,7 +954,8 @@ int main() {
 		//waitKey(1);
 		//}
 	}
-	resultsFile.close();
+	ClearAll();
+	//resultsFile.close();
 	//listFile.close();
 }
 
