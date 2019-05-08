@@ -73,15 +73,6 @@ float xMin, yMin, width, height;             //跟踪框的坐标(xMin,yMin),宽
 Mat frame,gray_image,texture;				 //帧
 Rect initbox;                                //初始跟踪框
 
-//设置种子数，一般利用系统时间来进行设置，也可以直接传入一个long型整数
-long set_seed(long setvalue)
-{
-	if (setvalue != 0)
-		ran_seed = setvalue;  //如果传入的参数setvalue!=0，设置该数为种子
-	else
-		ran_seed = time(NULL);   // 否则利用系统时间为种子数
-	return(ran_seed);
-}
 
 /*
 计算一幅图像中某个区域的彩色直方图分布
@@ -118,11 +109,9 @@ void CalcuColorHistogram(int x0, int y0, int Wx, int Hy,
 	if ((x0 < 0) || (x0 >= W) || (y0 < 0) || (y0 >= H)
 		|| (Wx <= 0) || (Hy <= 0))
 	{
-		cout << "44" << endl;
 		return;
 	}
 
-	cout << "5" << endl;
 	x_begin = x0 - Wx;               /* 计算实际高宽和区域起始点 */
 	y_begin = y0 - Hy;
 	if (x_begin < 0) x_begin = 0;
@@ -181,8 +170,8 @@ float CalcuBhattacharyya(float * p, float * q, int bbins)
 
 //# define RECIP_SIGMA  3.98942280401    1/(sqrt(2*pi)*sigma), 这里sigma = 0.1 
 # define SIGMA2       0.02           /* 2*sigma^2, 这里sigma = 0.1 */
-# define ALPHA        0.7
-# define BETA         0.3
+# define ALPHA        0.5
+# define BETA         0.5
 # define sigmac       -0.02
 # define sigmag       -0.02
 /*根据巴氏系数计算各个权值*/
@@ -197,20 +186,6 @@ float CalcuWeightedPi(float rho1, float rho2)
 	float b = d_grad2 * BETA / sigmag;
 	pi_n = (float)(exp(a + b));
 	return(pi_n);
-}
-
-float ran0(long *idum)
-{
-	long k;
-	float ans;
-
-	/* *idum ^= MASK;*/      /* XORing with MASK allows use of zero and other */
-	k = (*idum) / IQ;            /* simple bit patterns for idum.                 */
-	*idum = IA * (*idum - k * IQ) - IR * k;  /* Compute idum=(IA*idum) % IM without over- */
-	if (*idum < 0) *idum += IM;  /* flows by Schrage’s method.               */
-	ans = AM * (*idum);          /* Convert idum to a floating result.            */
-	/* *idum ^= MASK;*/      /* Unmask before return.                         */
-	return ans;
 }
 
 /*
@@ -430,7 +405,7 @@ void Propagate(SPACESTATE * state, int N)
 		state[i].Hxt = (int)(state[i].Hxt + state[i].Hxt*state[i].at_dot + rn[4] * SCALE_DISTURB + 0.5);
 		state[i].Hyt = (int)(state[i].Hyt + state[i].Hyt*state[i].at_dot + rn[5] * SCALE_DISTURB + 0.5);
 		state[i].at_dot = (float)(state[i].at_dot + rn[6] * SCALE_CHANGE_D);
-		circle(frame,Point(state[i].xt,state[i].yt),3, Scalar(0,255,0),-1);  //在每一帧上显示粒子位置
+		//circle(frame,Point(state[i].xt,state[i].yt),3, Scalar(0,255,0),-1);  //在每一帧上显示粒子位置
 	}
 	return;
 }
@@ -641,7 +616,6 @@ int ColorParticleTracking(unsigned char * image, int &W, int &H,
 		max_weight = max_weight < weights[i] ? weights[i] : max_weight;
 	/*进行合法性检验，不合法返回-1*/
 	if (xc < 0 || yc < 0 || xc >= W || yc >= H || Wx_h <= 0 || Hy_h <= 0) {
-		cout << "-10" << endl;
 		return(-1);
 	}
 	else
@@ -731,8 +705,8 @@ void on_MouseHandler(int event, int x, int y, int flags, void* param)
 		yMin = initbox.y;
 		width = initbox.width;
 		height = initbox.height;
-		rectangle(pFront1, initbox.tl(), initbox.br(), Scalar(0, 0, 250), 2, 8, 0);
-		imshow("tracking", pFront1);
+		rectangle(frame, initbox.tl(), initbox.br(), Scalar(0, 0, 250), 2, 8, 0);
+		imshow("tracking", frame);
 		return;
 	}
 	//gotbb=true;
@@ -774,7 +748,6 @@ void mouseHandler(int event, int x, int y, int flags, void* param)
 		WidIn = selection.width / 2;
 		HeiIn = selection.height / 2;
 		Initialize(centerx, centery, WidIn, HeiIn, img, Wid, Hei);
-		//roi_lbp = Mat(texture, selection);
 		track = true;
 		pause = false;
 		break;
@@ -829,22 +802,24 @@ int main() {
 	VideoCapture sequence(first_file);
 	VideoCapture seq;
 	//seq.open("C:/Users/18016/Desktop/ObjectTracking/learnopencv-master/tracking/videos/chaplin.mp4");
-	seq.open(0);
+	//seq.open(0);
+	//seq.open("C:/Users/18016/Desktop/Benchmark_OTB/videos/crew_cif.y4m");
+	seq.open("C:/Users/18016/Desktop/Benchmark_OTB/videos/3.mpeg");
 	if (!sequence.isOpened())
 	{
 		cout << "Failed to open the image sequence!\n" << endl;
 		return 1;
 	}
 	namedWindow("tracking", 1);
-	//setMouseCallback("tracking", on_MouseHandler, 0);
-	setMouseCallback("tracking", mouseHandler, 0);
+	setMouseCallback("tracking", on_MouseHandler, 0);
+	//setMouseCallback("tracking", mouseHandler, 0);
 	// Write Results
-	//ofstream resultsFile;
+	ofstream resultsFile;
 	string resultsPath = "D:\\output.txt";
-	//resultsFile.open(resultsPath);
+	resultsFile.open(resultsPath);
 
 	// Frame counter
-	int nFrames = 0;
+	int nFrames = 0,lostcount = 0;
 
 	for (;;) {
 		// Read each frame from the list
@@ -877,50 +852,74 @@ int main() {
 		texture = LBP(gray_image);
 
 		IplToImge(frame, Wid, Hei);
-		imshow("gray", texture);
+		//imshow("gray", texture);
 		double time0 = static_cast<double>(getTickCount());
 		// First frame, give the groundtruth to the tracker
-		/*if (nFrames == 0) {
+		if (nFrames == 0) {
 			while (pause)
 				if (waitKey(0) == 'p')
 					pause = false;
 			tracker.init(Rect(xMin, yMin, width, height), frame);
 			rectangle(frame, Point(xMin, yMin), Point(xMin + width, yMin + height), Scalar(0, 255, 255), 1, 8);
-			//Initialize(xMin + width / 2, yMin + height / 2, width / 2, height / 2, img, Wid, Hei);
+			Initialize(xMin + width / 2, yMin + height / 2, width / 2, height / 2, img, Wid, Hei);
 			//resultsFile << xMin << "," << yMin << "," << width << "," << height << endl;
-		}*/
+		}
 		// Update 更新
-		//else {
-			//result = tracker.update(frame);
-		if (track)
-		{
+		else {
+			result = tracker.update(frame);
+		
 			rho_v = ColorParticleTracking(img, Wid, Hei, xout, yout, WidOut, HeiOut, max_weight);
-			//if (rho_v == 1 && max_weight > 0.0001) {
-			rectangle(frame, Point(xout - WidOut, yout - HeiOut),
-				Point(xout + WidOut, yout + HeiOut), cvScalar(255, 0, 0), 1, 8);//蓝色
-			//xin = xout;
-			//yin = yout;         //上一帧的输出作为这一帧的输入
+			if (rho_v == 1 && max_weight > 0.0001) {
+				//rectangle(frame, Point(xout - WidOut, yout - HeiOut),
+				//	Point(xout + WidOut, yout + HeiOut), cvScalar(255, 0, 0), 1, 8);//蓝色
+				//xin = xout;
+				//yin = yout;         //上一帧的输出作为这一帧的输入
 			//tracker.init(Rect(xout - WidOut, yout - HeiOut, WidOut * 2, HeiOut * 2), frame);
 			//result.x = xout - result.width / 2;
 			//result.y = yout - result.height / 2;
 			//tracker.init(result, frame);
 			//tracker.updateTrackerPosition(result);
-		//}
-		//else {
-		//	cout << "pf lost." << endl;
-		//}
-		//if (tracker.peak_value < 0.6) {
-		//	cout << "target lost" << endl;
-			//Initialize(xMin + width / 2, yMin + height / 2, width / 2, height / 2, img, Wid, Hei);	
-		//}
-		//else {
-			//rectangle(frame, Point(result.x + result.width / 2 - WidOut, result.y + result.height / 2 - HeiOut),
-			//	Point(result.x + result.width / 2 + WidOut, result.y + result.height / 2 + HeiOut),
-			//	Scalar(0, 0, 255), 1, 8);//红色
+				if (tracker.peak_value < 0.4) {
+					if (lostcount > 10) {
+						lostcount = 0;
+						cout << "target lost" << endl;
+						result.x = xout - result.width / 2;
+						result.y = yout - result.height / 2;
+						tracker.updateTrackerPosition(result);
+					}
+					else
+						lostcount++;
+				}
+				else if (tracker.peak_value >= 0.55) {
+					lostcount = 0;
+
+					Initialize(result.x + result.width / 2, result.y + result.height / 2, result.width / 2, result.height / 2, img, Wid, Hei);
+				}
+			}
+			else {
+				cout << "pf lost." << endl;
+			}
+			
+			/*else {
+				Rect rect = result & Rect(Point(xout - WidOut, yout - HeiOut),
+					Point(xout + WidOut, yout + HeiOut));
+				lostcount = 0;
+				//float x1 = result.x + result.width / 2;
+				//float y1 = result.y + result.height / 2;
+				//float r2 = sqrt((x1 - xout)*(x1 - xout) + (y1 - yout)*(y1 - yout));
+				if(max_weight<0.1)
+					cout << "true lost" << endl;
+				else if (max_weight>=0.1&&(rect.area()) <= (result.area() / 2))
+				{
+					result.x = xout - result.width / 2;
+					result.y = yout - result.height / 2;
+					tracker.updateTrackerPosition(result);
+				}
+					
+			}*/
 			rectangle(frame, Point(result.x, result.y),
 				Point(result.x + result.width, result.y + result.height),
 				Scalar(0, 0, 255), 1, 8);//红色
-		//}
 		/*for ( int i = 0; i < NParticle; i++ )
 		{
 			states[i].xt = result.x+result.width/2;
@@ -933,15 +932,16 @@ int main() {
 		//tracker._roi.width=2*WidOut;
 		//tracker._roi.height=2*HeiOut;
 		//resultsFile << result.x << "," << result.y << "," << result.width << "," << result.height << endl;
-	//}
-	//cout << tracker.peak_value << endl;
-	//resultsFile << tracker.peak_value << endl<<max_weight<<endl;
-	//cout << nFrames << endl;
 		}
+		cout << nFrames << endl;
+		cout << tracker.peak_value << endl;
+		cout << max_weight << endl;
+	//resultsFile <<nFrames<<endl<< tracker.peak_value << endl<<max_weight<<endl;
+		
 		nFrames++;
 		time0 = getTickFrequency() / ((double)getTickCount() - time0);
 		string fps = to_string(time0);
-		putText(frame,"FPS: " + fps, Point(0, 50), FONT_HERSHEY_SIMPLEX, 0.75, Scalar(50, 50, 170), 2);
+		//putText(frame,"FPS: " + fps, Point(0, 50), FONT_HERSHEY_SIMPLEX, 0.75, Scalar(50, 50, 170), 2);
 		//cout<< time0 << endl;
 		//if (!SILENT){
 		imshow("tracking", frame);
@@ -953,9 +953,15 @@ int main() {
 				pause = false;
 		//waitKey(1);
 		//}
+		if (pause) {
+			cvWaitKey(0);
+		}
+		else
+			cvWaitKey(100);
+		//waitKey(0);
 	}
 	ClearAll();
-	//resultsFile.close();
+	resultsFile.close();
 	//listFile.close();
 }
 
