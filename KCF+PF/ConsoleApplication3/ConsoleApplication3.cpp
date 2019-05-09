@@ -170,8 +170,8 @@ float CalcuBhattacharyya(float * p, float * q, int bbins)
 
 //# define RECIP_SIGMA  3.98942280401    1/(sqrt(2*pi)*sigma), 这里sigma = 0.1 
 # define SIGMA2       0.02           /* 2*sigma^2, 这里sigma = 0.1 */
-# define ALPHA        0.5
-# define BETA         0.5
+# define ALPHA        0.7
+# define BETA         0.3
 # define sigmac       -0.02
 # define sigmag       -0.02
 /*根据巴氏系数计算各个权值*/
@@ -706,6 +706,7 @@ void on_MouseHandler(int event, int x, int y, int flags, void* param)
 		width = initbox.width;
 		height = initbox.height;
 		rectangle(frame, initbox.tl(), initbox.br(), Scalar(0, 0, 250), 2, 8, 0);
+		Initialize(xMin + width / 2, yMin + height / 2, width / 2, height / 2, img, Wid, Hei);
 		imshow("tracking", frame);
 		return;
 	}
@@ -803,8 +804,8 @@ int main() {
 	VideoCapture seq;
 	//seq.open("C:/Users/18016/Desktop/ObjectTracking/learnopencv-master/tracking/videos/chaplin.mp4");
 	//seq.open(0);
-	//seq.open("C:/Users/18016/Desktop/Benchmark_OTB/videos/crew_cif.y4m");
-	seq.open("C:/Users/18016/Desktop/Benchmark_OTB/videos/3.mpeg");
+	seq.open("C:/Users/18016/Desktop/Benchmark_OTB/videos/crew_cif.y4m");
+	//seq.open("C:/Users/18016/Desktop/Benchmark_OTB/videos/2.mpeg");
 	if (!sequence.isOpened())
 	{
 		cout << "Failed to open the image sequence!\n" << endl;
@@ -861,7 +862,7 @@ int main() {
 					pause = false;
 			tracker.init(Rect(xMin, yMin, width, height), frame);
 			rectangle(frame, Point(xMin, yMin), Point(xMin + width, yMin + height), Scalar(0, 255, 255), 1, 8);
-			Initialize(xMin + width / 2, yMin + height / 2, width / 2, height / 2, img, Wid, Hei);
+			//Initialize(xMin + width / 2, yMin + height / 2, width / 2, height / 2, img, Wid, Hei);
 			//resultsFile << xMin << "," << yMin << "," << width << "," << height << endl;
 		}
 		// Update 更新
@@ -869,9 +870,9 @@ int main() {
 			result = tracker.update(frame);
 		
 			rho_v = ColorParticleTracking(img, Wid, Hei, xout, yout, WidOut, HeiOut, max_weight);
-			if (rho_v == 1 && max_weight > 0.0001) {
-				//rectangle(frame, Point(xout - WidOut, yout - HeiOut),
-				//	Point(xout + WidOut, yout + HeiOut), cvScalar(255, 0, 0), 1, 8);//蓝色
+			if (rho_v == 1 && max_weight >= 0.1) {//0.0001
+				rectangle(frame, Point(xout - WidOut, yout - HeiOut),
+					Point(xout + WidOut, yout + HeiOut), cvScalar(255, 0, 0), 1, 8);//蓝色
 				//xin = xout;
 				//yin = yout;         //上一帧的输出作为这一帧的输入
 			//tracker.init(Rect(xout - WidOut, yout - HeiOut, WidOut * 2, HeiOut * 2), frame);
@@ -880,7 +881,7 @@ int main() {
 			//tracker.init(result, frame);
 			//tracker.updateTrackerPosition(result);
 				if (tracker.peak_value < 0.4) {
-					if (lostcount > 10) {
+					if (lostcount > 5) {
 						lostcount = 0;
 						cout << "target lost" << endl;
 						result.x = xout - result.width / 2;
