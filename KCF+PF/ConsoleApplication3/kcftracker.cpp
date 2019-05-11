@@ -94,20 +94,20 @@ KCFTracker::KCFTracker(bool hog, bool fixed_window, bool multiscale, bool lab)
 {
 
     // Parameters equal in all cases
-    lambda = 0.0001;
-    padding = 2.5; 
+    lambda = 0.0001;				//regularization
+    padding = 2.5;					//horizontal area surrounding the target, relative to its size
     //output_sigma_factor = 0.1;
-    output_sigma_factor = 0.125;
+    output_sigma_factor = 0.125;	//bandwidth of gaussian target
 
 
     if (hog) {    // HOG
         // VOT
-        interp_factor = 0.012;
-        sigma = 0.6; 
+        interp_factor = 0.012;		// linear interpolation factor for adaptation
+        sigma = 0.6;				//gaussian kernel bandwidth
         // TPAMI
         //interp_factor = 0.02;
         //sigma = 0.5; 
-        cell_size = 4;
+        cell_size = 4;				//HOG cell size
         _hogfeatures = true;
 
         if (lab) {
@@ -159,13 +159,17 @@ KCFTracker::KCFTracker(bool hog, bool fixed_window, bool multiscale, bool lab)
 }
 
 // Initialize tracker 初始化
+/*****************************************************************************
+*函数功能：初始化跟踪器，包括回归参数的计算，变量的初始化（Initialize tracker）
+*函数参数：目标初始框的引用，初始帧
+*****************************************************************************/
 void KCFTracker::init(const cv::Rect &roi, cv::Mat image)
 {
     _roi = roi;
     assert(roi.width >= 0 && roi.height >= 0);
-    _tmpl = getFeatures(image, 1);
-    _prob = createGaussianPeak(size_patch[0], size_patch[1]);
-    _alphaf = cv::Mat(size_patch[0], size_patch[1], CV_32FC2, float(0));
+    _tmpl = getFeatures(image, 1);   // 获取特征,在train里面每帧修改
+    _prob = createGaussianPeak(size_patch[0], size_patch[1]);    // 这个不修改了,只初始化一次 24 14
+    _alphaf = cv::Mat(size_patch[0], size_patch[1], CV_32FC2, float(0));// 获取特征,在train里面每帧修改
     //_num = cv::Mat(size_patch[0], size_patch[1], CV_32FC2, float(0));
     //_den = cv::Mat(size_patch[0], size_patch[1], CV_32FC2, float(0));
     train(_tmpl, 1.0); // train with initial frame
@@ -179,6 +183,10 @@ void KCFTracker::updateTrackerPosition(cv::Rect &roi)
 
 
 // Update position based on the new frame 基于当前帧更新目标位置
+/*****************************************************************************
+*函数功能：获取当前帧的目标位置以及尺度（Update position based on the new frame）
+*函数参数：当前帧的整幅图像
+*****************************************************************************/
 cv::Rect KCFTracker::update(cv::Mat image)
 {
     if (_roi.x + _roi.width <= 0) _roi.x = -_roi.width + 1;
@@ -238,20 +246,27 @@ cv::Rect KCFTracker::update(cv::Mat image)
 
 // Detect object in the current frame.
 // z为前一帧样本,x为当前帧图像,peak_value为输出的峰值
+/*****************************************************************************
+*函数功能：根据上一帧结果计算当前帧的目标位置（Detect object in the current frame）
+*函数参数：之前训练（初始化）的结果，当前的特征图，当前最高得分（引用）
+*****************************************************************************/
 cv::Point2f KCFTracker::detect(cv::Mat z, cv::Mat x, float &peak_value)
 {
     using namespace FFTTools;
 
-    cv::Mat k = gaussianCorrelation(x, z);
-    cv::Mat res = (real(fftd(complexMultiplication(_alphaf, fftd(k)), true)));
+	// 做变换得到计算结果res
+    cv::Mat k = gaussianCorrelation(x, z);   // 计算x和z之间的高斯相关核(公式)
+    cv::Mat res = (real(fftd(complexMultiplication(_alphaf, fftd(k)), true))); // 计算目标得分(公式)
 
     //minMaxLoc only accepts doubles for the peak, and integer points for the coordinates
+	// 使用opencv的minMaxLoc来定位峰值坐标位置
     cv::Point2i pi;
     double pv;
-    cv::minMaxLoc(res, NULL, &pv, NULL, &pi);
+    cv::minMaxLoc(res, NULL, &pv, NULL, &pi);//计算最小值
     peak_value = (float) pv;
 
     //subpixel peak estimation, coordinates will be non-integer
+	// 子像素峰值检测，坐标是非整形的
     cv::Point2f p((float)pi.x, (float)pi.y);
 
     if (pi.x > 0 && pi.x < res.cols-1) {
@@ -269,14 +284,20 @@ cv::Point2f KCFTracker::detect(cv::Mat z, cv::Mat x, float &peak_value)
 }
 
 // train tracker with a single image
+/*****************************************************************************
+*函数功能：根据每一帧的结果训练样本并更新模板（train tracker with a single image）
+*函数参数：新的目标图像，训练因子train_interp_factor是interp_factor
+*****************************************************************************/
 void KCFTracker::train(cv::Mat x, float train_interp_factor)
 {
     using namespace FFTTools;
 
     cv::Mat k = gaussianCorrelation(x, x);
-    cv::Mat alphaf = complexDivision(_prob, (fftd(k) + lambda));
+    cv::Mat alphaf = complexDivision(_prob, (fftd(k) + lambda));//计算岭回归系数(公式)
     
+	// 更新模板的特征
     _tmpl = (1 - train_interp_factor) * _tmpl + (train_interp_factor) * x;
+	// 更新岭回归系数的值
     _alphaf = (1 - train_interp_factor) * _alphaf + (train_interp_factor) * alphaf;
 
 
@@ -292,7 +313,12 @@ void KCFTracker::train(cv::Mat x, float train_interp_factor)
 
 }
 
-// Evaluates a Gaussian kernel with bandwidth SIGMA for all relative shifts between input images X and Y, which must both be MxN. They must    also be periodic (ie., pre-processed with a cosine window).
+// Evaluates a Gaussian kernel with bandwidth SIGMA for all relative shifts between input images X and Y, which must both be MxN. They must also be periodic (ie., pre-processed with a cosine window).
+/*****************************************************************************
+*函数功能：使用带宽SIGMA计算高斯卷积核以用于所有图像X和Y之间的相对位移
+必须都是MxN大小。二者必须都是周期的（即，通过一个cos窗口进行预处理）
+*函数参数：高斯核的两个参数
+*****************************************************************************/
 cv::Mat KCFTracker::gaussianCorrelation(cv::Mat x1, cv::Mat x2)
 {
     using namespace FFTTools;
@@ -304,9 +330,12 @@ cv::Mat KCFTracker::gaussianCorrelation(cv::Mat x1, cv::Mat x2)
         cv::Mat x2aux;
         for (int i = 0; i < size_patch[2]; i++) {
             x1aux = x1.row(i);   // Procedure do deal with cv::Mat multichannel bug
-            x1aux = x1aux.reshape(1, size_patch[0]);
+            x1aux = x1aux.reshape(1, size_patch[0]);// 将第i个属性排列成原来cell的排列形式
             x2aux = x2.row(i).reshape(1, size_patch[0]);
-            cv::mulSpectrums(fftd(x1aux), fftd(x2aux), caux, 0, true); 
+
+			// 两个傅立叶频谱的每个元素的乘法 相乘-频谱
+			// 输入数组1、输入数组2、输出数组(和输入数组有相同的类型和大小)
+            cv::mulSpectrums(fftd(x1aux), fftd(x2aux), caux, 0, true); // 核相关性公式
             caux = fftd(caux, true);
             rearrange(caux);
             caux.convertTo(caux,CV_32F);
@@ -329,6 +358,10 @@ cv::Mat KCFTracker::gaussianCorrelation(cv::Mat x1, cv::Mat x2)
 }
 
 // Create Gaussian Peak. Function called only in the first frame.
+/*****************************************************************************
+*函数功能：创建高斯峰函数，仅在第一帧时被执行
+*函数参数：二维高斯峰的X、Y的大小
+*****************************************************************************/
 cv::Mat KCFTracker::createGaussianPeak(int sizey, int sizex)
 {
     cv::Mat_<float> res(sizey, sizex);
@@ -350,13 +383,26 @@ cv::Mat KCFTracker::createGaussianPeak(int sizey, int sizex)
 }
 
 // Obtain sub-window from image, with replication-padding and extract features
+/*****************************************************************************
+*函数功能：提取目标窗口的特征
+*函数参数：图像，是否使用汉宁窗，尺度调整因子
+*****************************************************************************/
 cv::Mat KCFTracker::getFeatures(const cv::Mat & image, bool inithann, float scale_adjust)
 {
+	//步骤：
+	//1.根据给定的框框找到合适的框
+	//2.提取HOG特征
+	//3.对特征进行归一化和截断
+	//4.对特征进行降维
+	//5.获取Lab特征,并将结果与hog特征进行连接
+	//6.创建一个常数阵,对所有特征根据cell的位置进行加权
+
     cv::Rect extracted_roi;
 
     float cx = _roi.x + _roi.width / 2;
     float cy = _roi.y + _roi.height / 2;
 
+	// 初始化hanning窗,其实只执行一次,只在第一帧的时候inithann=1
     if (inithann) {
         int padded_w = _roi.width * padding;
         int padded_h = _roi.height * padding;

@@ -805,7 +805,7 @@ int main() {
 	//seq.open("C:/Users/18016/Desktop/ObjectTracking/learnopencv-master/tracking/videos/chaplin.mp4");
 	//seq.open(0);
 	seq.open("C:/Users/18016/Desktop/Benchmark_OTB/videos/crew_cif.y4m");
-	//seq.open("C:/Users/18016/Desktop/Benchmark_OTB/videos/2.mpeg");
+	//seq.open("C:/Users/18016/Desktop/Benchmark_OTB/videos/1.mpeg");
 	if (!sequence.isOpened())
 	{
 		cout << "Failed to open the image sequence!\n" << endl;
@@ -820,7 +820,7 @@ int main() {
 	resultsFile.open(resultsPath);
 
 	// Frame counter
-	int nFrames = 0,lostcount = 0;
+	int nFrames = 0,KCFLostCount = 0,PFLostCount = 0;
 
 	for (;;) {
 		// Read each frame from the list
@@ -870,7 +870,7 @@ int main() {
 			result = tracker.update(frame);
 		
 			rho_v = ColorParticleTracking(img, Wid, Hei, xout, yout, WidOut, HeiOut, max_weight);
-			if (rho_v == 1 && max_weight >= 0.1) {//0.0001
+			if (rho_v == 1 && max_weight >= 0.1) {//0.0001、0.1
 				rectangle(frame, Point(xout - WidOut, yout - HeiOut),
 					Point(xout + WidOut, yout + HeiOut), cvScalar(255, 0, 0), 1, 8);//蓝色
 				//xin = xout;
@@ -881,23 +881,26 @@ int main() {
 			//tracker.init(result, frame);
 			//tracker.updateTrackerPosition(result);
 				if (tracker.peak_value < 0.4) {
-					if (lostcount > 5) {
-						lostcount = 0;
+					if (KCFLostCount > 5) {
+						KCFLostCount = 0;
 						cout << "target lost" << endl;
 						result.x = xout - result.width / 2;
 						result.y = yout - result.height / 2;
 						tracker.updateTrackerPosition(result);
 					}
 					else
-						lostcount++;
+						KCFLostCount++;
 				}
 				else if (tracker.peak_value >= 0.55) {
-					lostcount = 0;
-
+					KCFLostCount = 0;
+			
 					Initialize(result.x + result.width / 2, result.y + result.height / 2, result.width / 2, result.height / 2, img, Wid, Hei);
 				}
 			}
 			else {
+				PFLostCount++;
+				rectangle(frame, Point(xout - WidOut, yout - HeiOut),
+					Point(xout + WidOut, yout + HeiOut), cvScalar(255, 0, 0), 1, 8);//蓝色
 				cout << "pf lost." << endl;
 			}
 			
@@ -958,7 +961,7 @@ int main() {
 			cvWaitKey(0);
 		}
 		else
-			cvWaitKey(100);
+			cvWaitKey(50);
 		//waitKey(0);
 	}
 	ClearAll();
